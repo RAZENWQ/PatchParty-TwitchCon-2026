@@ -28,6 +28,9 @@ export function createVoteEngine({ now = () => Date.now(), roundMs = 30000 } = {
   let options = PATCHES.slice(0, 3);
   let votes = new Map();
   let winner = null;
+  let activePatch = null;
+  let lastResult = null;
+  let generation = 1;
   let activity = [];
   const listeners = new Set();
 
@@ -38,7 +41,8 @@ export function createVoteEngine({ now = () => Date.now(), roundMs = 30000 } = {
       round, startedAt, closesAt: startedAt + roundMs,
       serverTime: now(), remainingMs: Math.max(0, startedAt + roundMs - now()),
       options: options.map((p, i) => ({ ...p, number: i + 1, votes: counts[i], percent: total ? Math.round(counts[i] * 100 / total) : 0 })),
-      totalVotes: total, recentVotes: activity.slice(-5).reverse(), winner
+      totalVotes: total, recentVotes: activity.slice(-5).reverse(), winner,
+      activePatch, lastResult, generation
     };
   }
   function announce(type) {
@@ -61,9 +65,17 @@ export function createVoteEngine({ now = () => Date.now(), roundMs = 30000 } = {
   function tick() {
     if (now() < startedAt + roundMs) return false;
     const counts = options.map(p => Array.from(votes.values()).filter(v => v.choice === p.id).length);
-    let best = 0;
-    counts.forEach((count, i) => { if (count > counts[best]) best = i; });
-    winner = { ...options[best], votes: counts[best], round, at: now() };
+    const total = counts.reduce((sum, count) => sum + count, 0);
+    if (total === 0) {
+      winner = null;
+      lastResult = { type: 'no-votes', round, at: now() };
+    } else {
+      let best = 0;
+      counts.forEach((count, i) => { if (count > counts[best]) best = i; });
+      winner = { ...options[best], votes: counts[best], round, at: now() };
+      activePatch = { ...winner };
+      lastResult = { type: 'winner', round, winner: { ...winner } };
+    }
     round++;
     startedAt = now();
     const offset = ((round - 1) * 3) % PATCHES.length;
@@ -75,7 +87,8 @@ export function createVoteEngine({ now = () => Date.now(), roundMs = 30000 } = {
   }
   function reset() {
     round = 1; startedAt = now(); options = PATCHES.slice(0, 3);
-    votes.clear(); winner = null; activity = [];
+    votes.clear(); winner = null; activePatch = null; lastResult = null; activity = [];
+    generation++;
     announce('reset');
   }
   return { state, vote, tick, reset, onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); } };

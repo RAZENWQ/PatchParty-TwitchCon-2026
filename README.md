@@ -1,6 +1,6 @@
 # PatchParty — Twitch Chat Becomes the Game Designer
 
-**Status: playable local MVP / Twitch live authorization not yet tested / Codex account reconnect pending.**
+**Status: playable Codex-refined prototype / Twitch lifecycle mock-tested / live Twitch authorization not yet tested.**
 
 A game for Twitch: the broadcaster pilots a character through an arena, and chat voters **rewrite the rules** every 30 seconds. Viewers vote with **!patch 1**, **!patch 2**, **!patch 3**; one vote per user per round. The winning patch changes gameplay.
 
@@ -61,12 +61,16 @@ The app uses no external scripts, images or copyrighted music.
 
 ## Verification and limits
 
+Empty rounds do not activate a patch. A genuine round winner becomes the server-authoritative active patch for both the game and OBS overlay until another genuine winner replaces it or the rounds are reset. Demo voting uses an HttpOnly browser-session identity, and the built-in sample voters cannot be counted twice in one round.
+
+The Twitch backend now validates authorization, verifies the subscription acknowledgement before reporting connected, retries validation after authorization expiry, performs EventSub reconnect handover, and detects stale connections. These lifecycle paths are covered with mocks only; no live Twitch integration test has been performed.
+
 ~~~powershell
 npm run check
 npm test
 ~~~
 
-Node's built-in tests cover strict vote parsing, Twitch event normalization, duplicates, round closure, ties and HTTP demo endpoints.
+Node's built-in tests cover strict vote parsing, Twitch event normalization, duplicate and empty rounds, reset state, demo identities, HTTP endpoints, subscription acknowledgement, authorization retry, and reconnect handover.
 
 The Canvas game is local to the browser; the overlay shows votes and applied patches, not player position. This is a **hackathon prototype**, not a production-ready Twitch service. Live Twitch authorization and Codex session evidence remain mandatory for eligible submission.
 

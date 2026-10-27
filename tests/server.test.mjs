@@ -10,9 +10,11 @@ test('loopback API, duplicate votes, demo and overlay', { timeout: 18000 }, asyn
     ...process.env, PORT: String(port), HOST: '127.0.0.1',
     TWITCH_USER_ACCESS_TOKEN: '', TWITCH_CLIENT_ID: '', TWITCH_BROADCASTER_ID: '', TWITCH_READER_USER_ID: ''
   };
+  let cookie = '';
   const child = spawn(process.execPath, ['server.mjs'], { cwd: process.cwd(), env, windowsHide: true, stdio: 'ignore' });
   const post = async (path, payload = {}) => {
-    const res = await fetch(origin + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const res = await fetch(origin + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(payload) });
+    if (res.headers.get('set-cookie')) cookie = res.headers.get('set-cookie').split(';')[0];
     return { status: res.status, body: await res.json() };
   };
   try {
@@ -40,6 +42,8 @@ test('loopback API, duplicate votes, demo and overlay', { timeout: 18000 }, asyn
     assert.equal(duplicate.body.reason, 'already_voted');
     const sim = await post('/api/demo/simulate');
     assert.equal(sim.body.inserted, 10);
+    const repeatedSim = await post('/api/demo/simulate');
+    assert.equal(repeatedSim.body.inserted, 0, 'simulated voters cannot be counted twice in one round');
     const after = await (await fetch(origin + '/api/state')).json();
     assert.equal(after.totalVotes, 11);
     const reset = await post('/api/demo/reset');

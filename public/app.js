@@ -3,6 +3,8 @@ const overlay = document.body.dataset.mode === 'overlay';
 let current = null;
 let appliedRound = 0;
 let activePatch = '';
+let seenGeneration = null;
+let seenResult = '';
 const logged = [];
 const optionsNode = el('vote-options');
 const canvas = el('arena');
@@ -66,7 +68,30 @@ function applyState(state) {
   if (el('connection')) el('connection').textContent = connectionText(state.twitch);
   if (el('mode-label')) el('mode-label').textContent = state.demo ? 'SANDBOX / DEMO' : 'LIVE TWITCH / VERIFIED';
   if (el('demo-actions')) el('demo-actions').hidden = !state.demo;
-  if (state.winner && state.winner.round !== appliedRound) {
+  if (seenGeneration !== null && seenGeneration !== state.generation) {
+    logged.length = 0;
+    seenResult = '';
+    appliedRound = 0;
+    const log = el('patch-log');
+    if (log) log.replaceChildren(make('div', 'log-entry empty', 'No patches yet. Chat decides what changes.'));
+    if (el('round-result')) el('round-result').textContent = 'Rounds reset. No patch is active.';
+  }
+  seenGeneration = state.generation;
+  activePatch = state.activePatch?.id || '';
+  if (el('active-patch')) el('active-patch').textContent = state.activePatch
+    ? 'ACTIVE PATCH: ' + state.activePatch.label : 'NO PATCH APPLIED';
+  const resultKey = state.lastResult ? state.generation + ':' + state.lastResult.round + ':' + state.lastResult.type : '';
+  if (resultKey && resultKey !== seenResult) {
+    seenResult = resultKey;
+    if (state.lastResult.type === 'winner') {
+      const result = state.lastResult.winner;
+      if (el('round-result')) el('round-result').textContent = 'Round ' + result.round + ' winner: ' + result.label;
+    } else {
+      if (el('round-result')) el('round-result').textContent = 'Round ' + state.lastResult.round + ': no votes, patch unchanged';
+      toast('NO VOTES - NO PATCH');
+    }
+  }
+  if (state.winner && state.lastResult?.type === 'winner' && state.winner.round !== appliedRound) {
     appliedRound = state.winner.round;
     activePatch = state.winner.id;
     const label = '✦ ACTIVE PATCH: ' + state.winner.label;

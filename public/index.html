@@ -16,7 +16,7 @@
       <div class="section-header"><span><i class="eyebrow">01 /</i> THE ARENA</span><div class="header-sub">PLAY. SURVIVE. ADAPT.</div></div>
       <div class="arena-frame">
         <div class="arena-status"><div class="status-chip"><span class="dot"></span> SURVIVAL MODE</div><div class="score-chip"><span>SCORE</span><b id="score">0000</b></div></div>
-        <canvas id="arena" width="960" height="560" aria-label="PatchParty arena game"></canvas>
+        <canvas id="arena" width="960" height="560" tabindex="0" role="img" aria-label="PatchParty survival arena. Move with W A S D or arrow keys, collect green orbs, and avoid pink enemies."></canvas>
         <div class="arena-footer"><div class="keyboard-legend"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>MOVE</span> <kbd>↔</kbd><kbd>↕</kbd><span>ALSO WORK</span></div><div id="active-patch" class="applied-chip">NO PATCH APPLIED</div></div>
         <div id="game-toast" class="game-toast"></div>
       </div>
@@ -42,6 +42,7 @@
         <span><b id="total-votes">0</b> VOTES CAST</span>
         <span id="mode-label">SANDBOX / DEMO</span>
       </div>
+      <p id="round-result" class="round-result" role="status" aria-live="polite">No round result yet. A patch activates only when at least one vote is cast.</p>
       <div class="demo-actions" id="demo-actions">
         <button id="simulate">✦ ADD DEMO VOTERS</button>
         <button id="reset-votes">RESET ROUNDS</button>

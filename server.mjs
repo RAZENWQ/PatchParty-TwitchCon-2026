@@ -2,6 +2,7 @@ import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { createVoteEngine } from './src/core.mjs';
 import { TwitchReader } from './src/twitch.mjs';
 
@@ -43,6 +44,17 @@ function reply(res, status, payload, extra = {}) {
     ...extra
   });
   res.end(JSON.stringify(payload));
+}
+function demoSession(req) {
+  const match = /(?:^|;\s*)patchparty_demo=([a-f0-9-]{36})(?:;|$)/i.exec(req.headers.cookie || '');
+  return match?.[1] || null;
+}
+function ensureDemoSession(req, res) {
+  const existing = demoSession(req);
+  if (existing) return existing;
+  const id = randomUUID();
+  res.setHeader('Set-Cookie', 'patchparty_demo=' + id + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400');
+  return id;
 }
 function localhost(req) {
   const address = req.socket.remoteAddress || '';
@@ -95,7 +107,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/api/health') {
     return reply(res, 200, { ok: true, app: 'PatchParty', uptime: Math.round(process.uptime()), twitch: twitchStatus });
   }
-  if (req.method === 'GET' && pathname === '/api/state') return reply(res, 200, readOnlyStatus());
+  if (req.method === 'GET' && pathname === '/api/state') {
+    if (localhost(req) && twitchStatus !== 'connected') ensureDemoSession(req, res);
+    return reply(res, 200, readOnlyStatus());
+  }
   if (req.method === 'GET' && pathname === '/api/events') {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -118,7 +133,7 @@ const server = http.createServer(async (req, res) => {
         const input = await readJson(req);
         const name = String(input.name || 'spectator').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24);
         if (!name) return reply(res, 400, { ok: false, reason: 'invalid_name' });
-        const vote = engine.vote({ userId: 'demo:' + name.toLowerCase(), name, choice: Number(input.choice) });
+        const vote = engine.vote({ userId: 'demo:session:' + ensureDemoSession(req, res), name, choice: Number(input.choice) });
         return reply(res, vote.ok ? 200 : 409, vote);
       }
       if (pathname === '/api/demo/simulate') {
@@ -127,7 +142,7 @@ const server = http.createServer(async (req, res) => {
         let inserted = 0;
         for (let i = 0; i < names.length; i++) {
           const choice = 1 + ((i * 7 + round) % 3);
-          if (engine.vote({ userId: 'demo:auto:' + names[i] + ':' + round, name: names[i], choice }).ok) inserted++;
+          if (engine.vote({ userId: 'demo:auto:' + names[i], name: names[i], choice }).ok) inserted++;
         }
         return reply(res, 200, { ok: true, inserted });
       }

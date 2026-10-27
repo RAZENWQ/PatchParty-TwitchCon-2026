@@ -32,18 +32,26 @@ test('one vote per user per round', () => {
   assert.equal(e.state().totalVotes, 0);
   assert.equal(e.vote({ userId: 'user-1', name: 'Alice', choice: 1 }).ok, true);
 });
-test('tie and zero votes resolve deterministically', () => {
+test('zero votes do not activate a patch; genuine ties resolve deterministically', () => {
   let ms = 0;
   const e = createVoteEngine({ now: () => ms, roundMs: 10000 });
   assert.equal(e.tick(), false);
   ms = 10000; assert.equal(e.tick(), true);
-  assert.equal(e.state().winner.id, PATCHES[0].id);
+  assert.equal(e.state().winner, null);
+  assert.equal(e.state().activePatch, null);
+  assert.deepEqual(e.state().lastResult.type, 'no-votes');
   assert.equal(e.state().options[0].id, PATCHES[3].id);
   assert.equal(e.vote({ userId: 'a', choice: 2 }).ok, true);
   assert.equal(e.vote({ userId: 'b', choice: 1 }).ok, true);
   ms = 20001; e.tick();
   assert.equal(e.state().winner.id, PATCHES[3].id);
-  e.reset(); assert.equal(e.state().round, 1);
+  assert.equal(e.state().activePatch.id, PATCHES[3].id);
+  const generation = e.state().generation;
+  e.reset();
+  assert.equal(e.state().round, 1);
+  assert.equal(e.state().activePatch, null);
+  assert.equal(e.state().lastResult, null);
+  assert.equal(e.state().generation, generation + 1);
 });
 test('reject invalid durations and sanitize names', () => {
   assert.throws(() => createVoteEngine({ roundMs: 10 }));
