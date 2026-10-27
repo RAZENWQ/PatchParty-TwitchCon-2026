@@ -9,3 +9,6 @@ CODEX-LAST-MESSAGE.txt
 coverage/
 patchparty-preview.png
 test-profile/
+CODEX-ITERATION-*-LOG.jsonl
+CODEX-ITERATION-*-RESULT.txt
+CODEX-ITERATION-*.md

@@ -6,7 +6,7 @@ Date: 2026-10-27
 
 Commit `9bf35f5` is the manually authored proof of concept that existed before this session. This document records the first successful Codex development pass; it does not attribute that earlier implementation to Codex.
 
-The Codex session ID is not exposed to the agent runtime, so no ID is asserted here. To retrieve it, open this conversation in Codex and run the exact slash command `/status`; copy the session identifier shown in the session details into the submission record. Official OpenAI documentation describes `/status` as the command that shows session details.
+The orchestrator captured the actual session identifier from the successful Codex CLI `--json` `thread.started` event: **`01a17d48-7701-7102-8488-dbaaaa6ab413`**. The corresponding local audit log is `CODEX-ITERATION-01-LOG.jsonl` (excluded from Git due to size) and the final Codex report is `CODEX-ITERATION-01-RESULT.txt`. This ID identifies the first successful code-writing Codex session, which produced Git commit `7a7ac2d`. If Devpost requires a different kind of identifier, check `/status` within that same session before submission. The original manually authored proof of concept remains separately attributed to commit `9bf35f5`.
 
 ## Changes made in this session
 
