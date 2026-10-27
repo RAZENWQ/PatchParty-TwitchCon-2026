@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PatchParty — Chat Becomes the Game Designer</title><link rel="stylesheet" href="/styles.css"></head>
+<body data-mode="game">
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"><span></span><span></span><span></span><span></span></span>
+      <div class="brand-name">PATCH<span>PARTY</span><small>CHAT WRITES THE RULES</small></div>
+    </div>
+    <div class="header-center"><span class="live-dot"></span><span id="connection">LOCAL DEMO · TWITCH NOT CONNECTED</span></div>
+    <div class="top-actions"><a href="/overlay" target="_blank" rel="noopener">OPEN OBS OVERLAY <span>↗</span></a><span class="build-tag">ALPHA / 0.1</span></div>
+  </header>
+  <main class="layout">
+    <section class="stage-column">
+      <div class="section-header"><span><i class="eyebrow">01 /</i> THE ARENA</span><div class="header-sub">PLAY. SURVIVE. ADAPT.</div></div>
+      <div class="arena-frame">
+        <div class="arena-status"><div class="status-chip"><span class="dot"></span> SURVIVAL MODE</div><div class="score-chip"><span>SCORE</span><b id="score">0000</b></div></div>
+        <canvas id="arena" width="960" height="560" aria-label="PatchParty arena game"></canvas>
+        <div class="arena-footer"><div class="keyboard-legend"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>MOVE</span> <kbd>↔</kbd><kbd>↕</kbd><span>ALSO WORK</span></div><div id="active-patch" class="applied-chip">NO PATCH APPLIED</div></div>
+        <div id="game-toast" class="game-toast"></div>
+      </div>
+      <div class="under-arena">
+        <div class="stat"><span>RUN TIME</span><strong id="run-time">00:00</strong></div>
+        <div class="stat"><span>HEALTH</span><strong id="health">♥ ♥ ♥</strong></div>
+        <div class="stat"><span>YOUR STREAK</span><strong id="streak">0</strong></div>
+        <div class="stat"><span>OBJECTIVE</span><strong class="objective">COLLECT ORBS · DODGE BOTS</strong></div>
+        <button class="restart" id="restart">↺ RESTART</button>
+      </div>
+    </section>
+    <aside class="sidebar">
+      <div class="section-header"><span><i class="eyebrow">02 /</i> LIVE MUTATIONS</span><span class="sidebar-live">●  ROUND <b id="round">01</b></span></div>
+      <div class="vote-header">
+        <div class="vote-tag">THE CHAT HAS CONTROL</div>
+        <div class="vote-title">YOU PICK.<br><em>WE PATCH.</em></div>
+        <div class="vote-subtitle">Every vote rewrites the laws of this world.</div>
+        <div class="clockline"><span>PATCH INCOMING</span><strong id="timer">00:30</strong></div>
+        <div class="timer-track"><div id="timer-bar"></div></div>
+      </div>
+      <div class="vote-list" id="vote-options"></div>
+      <div class="vote-foot">
+        <span><b id="total-votes">0</b> VOTES CAST</span>
+        <span id="mode-label">SANDBOX / DEMO</span>
+      </div>
+      <div class="demo-actions" id="demo-actions">
+        <button id="simulate">✦ ADD DEMO VOTERS</button>
+        <button id="reset-votes">RESET ROUNDS</button>
+      </div>
+      <div class="chat-instruction"><div class="prompt-arrow">↳</div><span>TWITCH CHAT COMMAND<br><b>!patch 1</b> <b>!patch 2</b> <b>!patch 3</b></span></div>
+    </aside>
+  </main>
+  <section class="lower">
+    <div class="lower-title"><span class="eyebrow">03 /</span> THE PATCH LOG <span class="moving-bolt">✦</span></div>
+    <div class="patch-log" id="patch-log"><div class="log-entry empty">When the first patch wins, its story starts here.</div></div>
+    <div class="bottom-note"><span>BUILT FOR TWITCH CREATORS</span><span>NO CHAT ACCESS REQUIRED TO TRY DEMO</span><span>PATCHPARTY © 2026</span></div>
+  </section>
+</div>
+<script type="module" src="/app.js"></script>
+</body></html>

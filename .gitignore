@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+CODEX-BUILD-LOG.jsonl
+CODEX-LAST-MESSAGE.txt
+.DS_Store
+coverage/
+patchparty-preview.png
+test-profile/

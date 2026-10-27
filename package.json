@@ -1,0 +1,14 @@
+{
+  "name": "patchparty-twitchcon-2026",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Twitch chat votes to mutate a live 2D arena game",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check server.mjs && node --check src/core.mjs && node --check src/twitch.mjs && node --check public/app.js"
+  },
+  "engines": {"node": ">=24"}
+}
