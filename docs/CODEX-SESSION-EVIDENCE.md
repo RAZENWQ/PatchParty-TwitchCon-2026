@@ -33,3 +33,13 @@ Final recorded result: syntax check passed; 10 tests passed, 0 failed. The HTTP 
 - Twitch was tested with mock WebSocket and fetch implementations only. No real OAuth credentials were accessed and no live EventSub delivery was tested.
 - The browser game state itself is intentionally local to each browser; the winning gameplay rule is server-authoritative and synchronized, while player position/score are not sent to the overlay.
 - No push, public publication, Devpost action, account login, or third-party account modification was performed.
+
+## 2026-10-28 device authorization development pass
+
+This later Codex pass added `src/twitch-device-auth.mjs` and `scripts/twitch-device-login.mjs`. The owner-facing CLI implements Twitch's documented public-client Device Code Flow without a Client Secret, validates the issued token and required scope, optionally resolves an exact broadcaster login, and saves the four EventSub settings to the Git-ignored `.env` only after confirmation when that file already exists. Existing non-Twitch configuration is preserved, and symbolic-link targets are refused.
+
+The new tests are offline and dependency-injected. They cover pending then success, expiry, slow-down, invalid authorization, denied access, broadcaster lookup, secret-free activation output, confirmation refusal, configuration preservation, and unsafe file targets. Development did not send OAuth or Helix requests, authorize an account, receive a real token, or test live Twitch chat. The session identifier recorded above remains evidence for the first successful Codex code-writing pass; no additional session identifier is invented here.
+
+## Additional verified Codex session (2026-10-28)
+
+A second genuine `codex exec --json` thread started with session ID **`01a183af-dff2-7a11-b2ef-2f09aff4241b`**, recorded in the local Git-ignored `CODEX-ITERATION-02-LOG.jsonl`. That session authored the device-authorization implementation and offline tests. Its final output is `CODEX-ITERATION-02-RESULT.txt`. No live Twitch login was made. The local commit was blocked by `.git/index.lock` write permissions inside the Codex sandbox, so these changes remain in the working tree pending a normal authorized commit.

@@ -30,21 +30,31 @@ Patches: Moon Physics (drift), Hyper Enemies (faster enemies), Laser Walls (dama
 
 For OBS, create a Browser Source and paste the overlay URL, with width 1920 and height 1080. For a real Twitch demonstration, stream with your authorized Twitch channel and have legitimate chat users cast votes.
 
-## Optional real Twitch chat connection (NOT yet tested)
+## Optional real Twitch chat connection (NOT yet live-tested)
 
-1. Register an app via [Twitch Developer Console](https://dev.twitch.tv/console/apps) using a Twitch account with 2FA, and consult [Twitch chat/EventSub docs](https://dev.twitch.tv/docs/chat/authenticating).
-2. Obtain a valid Twitch **user OAuth access token** with the scope **user:read:chat**, for an authorized channel/chat-reading account. Do not paste secrets into ChatGPT. This game only reads chat; it does not post messages.
-3. Copy .env.example to .env inside this project and fill:
+The owner can authorize chat reading from a phone with Twitch's documented public-client Device Code Flow. The CLI needs a Client ID but **never a Client Secret**.
 
-   - TWITCH_CLIENT_ID
-   - TWITCH_USER_ACCESS_TOKEN
-   - TWITCH_BROADCASTER_ID
-   - TWITCH_READER_USER_ID
+1. As the owner, register a **public** application in the [Twitch Developer Console](https://dev.twitch.tv/console/apps). Twitch requires 2FA to register applications. Choose the Device Code Grant/public-client option if shown. Copy only its Client ID; do not create, paste, or store a Client Secret for this flow.
+2. Stop the PatchParty process normally if you intend to replace the process configuration. Do not terminate an unrelated process. From this repository, run:
 
-4. Restart npm start. The backend checks the OAuth token with Twitch /oauth2/validate, opens the official WebSocket EventSub transport, subscribes to channel.chat.message and displays connection status.
-5. Send !patch 1 from a real viewer in the broadcaster channel. The counter must change in live-connected mode. Verify and record this interaction with Twitch visible.
+   ~~~powershell
+   npm.cmd run twitch:login -- --client-id=YOUR_CLIENT_ID
+   ~~~
 
-**No live Twitch integration tests have been completed yet.** OAuth flow is manually provided by the Twitch account owner; this local MVP does not implement token refresh or full production hardening. Never commit credentials or expose tokens in the frontend.
+   If the authorized reader is reading another broadcaster's chat, specify the broadcaster login:
+
+   ~~~powershell
+   npm.cmd run twitch:login -- --client-id=YOUR_CLIENT_ID --channel=channel_login
+   ~~~
+
+3. The CLI prints only a verified `https://www.twitch.tv/activate...` address and user code. Open that address on the owner's phone, sign in to the intended chat-reading account, confirm the matching code, review the `user:read:chat` permission, and approve. Press Ctrl+C to cancel safely.
+4. After Twitch issues a token, the CLI validates the application Client ID, required scope, and reader user ID. With `--channel`, it resolves that exact login through Helix; without it, the authorized token owner is used as the broadcaster.
+5. If `.env` already exists, explicitly answer `y` before only the four Twitch values are replaced. `HOST`, `PORT`, `ROUND_SECONDS`, comments, and other settings are preserved. Declining leaves the file unchanged. `.env` is Git-ignored and secret: never print, share, upload, or commit it.
+6. Start/restart with `npm.cmd start`. The backend validates the token, opens Twitch EventSub WebSocket, and subscribes to `channel.chat.message`. From a separate legitimate viewer account, send `!patch 1` in the selected channel and verify the counter changes and `/api/health` reports Twitch connected.
+
+Device-flow access tokens currently expire after about four hours, so this is suitable for a short live demonstration. This prototype intentionally does not persist or rotate Twitch refresh tokens; rerun the login command when the access token expires.
+
+**No real OAuth request, owner authorization, token validation, channel lookup, or live EventSub delivery has been completed during development.** All new authorization tests use injected offline mocks. See Twitch's official [Device Code Flow documentation](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow).
 
 ## API / controls
 
@@ -70,7 +80,7 @@ npm run check
 npm test
 ~~~
 
-Node's built-in tests cover strict vote parsing, Twitch event normalization, duplicate and empty rounds, reset state, demo identities, HTTP endpoints, subscription acknowledgement, authorization retry, and reconnect handover.
+Node's built-in tests cover strict vote parsing, Twitch event normalization, duplicate and empty rounds, reset state, demo identities, HTTP endpoints, subscription acknowledgement, authorization retry, reconnect handover, device-code pending/success/expiry/denial/slow-down behavior, channel lookup, log secrecy, and safe configuration writes.
 
 The Canvas game is local to the browser; the overlay shows votes and applied patches, not player position. This is a **hackathon prototype**, not a production-ready Twitch service. Live Twitch authorization and Codex session evidence remain mandatory for eligible submission.
 
