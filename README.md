@@ -1,6 +1,6 @@
 # PatchParty — Twitch Chat Becomes the Game Designer
 
-**Status: playable Codex-refined prototype / Twitch lifecycle mock-tested / live Twitch authorization not yet tested.**
+**Status: playable Codex-refined prototype / live Twitch connection confirmed / no live chat vote observed yet.**
 
 A game for Twitch: the broadcaster pilots a character through an arena, and chat voters **rewrite the rules** every 30 seconds. Viewers vote with **!patch 1**, **!patch 2**, **!patch 3**; one vote per user per round. The winning patch changes gameplay.
 
@@ -30,7 +30,7 @@ Patches: Moon Physics (drift), Hyper Enemies (faster enemies), Laser Walls (dama
 
 For OBS, create a Browser Source and paste the overlay URL, with width 1920 and height 1080. For a real Twitch demonstration, stream with your authorized Twitch channel and have legitimate chat users cast votes.
 
-## Optional real Twitch chat connection (NOT yet live-tested)
+## Optional real Twitch chat connection
 
 The owner can authorize chat reading from a phone with Twitch's documented public-client Device Code Flow. The CLI needs a Client ID but **never a Client Secret**.
 
@@ -54,13 +54,14 @@ The owner can authorize chat reading from a phone with Twitch's documented publi
 
 Device-flow access tokens currently expire after about four hours, so this is suitable for a short live demonstration. This prototype intentionally does not persist or rotate Twitch refresh tokens; rerun the login command when the access token expires.
 
-**No real OAuth request, owner authorization, token validation, channel lookup, or live EventSub delivery has been completed during development.** All new authorization tests use injected offline mocks. See Twitch's official [Device Code Flow documentation](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow).
+The owner has confirmed that the local service reached Twitch's connected state. No live chat vote has yet been observed, so end-to-end command delivery remains to be demonstrated with a legitimate viewer. Automated authorization and EventSub lifecycle tests use injected offline mocks. See Twitch's official [Device Code Flow documentation](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow).
 
 ## API / controls
 
 - GET /api/state — safe read-only vote state.
 - GET /api/events — Server-Sent Events for game and OBS overlay.
 - GET /api/health — server/Twitch status.
+- GET /api/diagnostics — loopback-only aggregate Twitch status and message/vote counters; never message text, identities, channel IDs or tokens.
 - POST /api/demo/vote — JSON {"name":"viewer","choice":2}; first vote counts.
 - POST /api/demo/simulate — ten local sample voters.
 - POST /api/demo/reset — reset local rounds.
@@ -78,10 +79,13 @@ The Twitch backend now validates authorization, verifies the subscription acknow
 ~~~powershell
 npm run check
 npm test
+npm run package:submission
 ~~~
 
-Node's built-in tests cover strict vote parsing, Twitch event normalization, duplicate and empty rounds, reset state, demo identities, HTTP endpoints, subscription acknowledgement, authorization retry, reconnect handover, device-code pending/success/expiry/denial/slow-down behavior, channel lookup, log secrecy, and safe configuration writes.
+Node's built-in tests cover strict vote parsing, Twitch event normalization, duplicate and empty rounds, reset state, demo identities, HTTP endpoints, privacy-safe Twitch counters, subscription acknowledgement, authorization retry, reconnect handover, device-code pending/success/expiry/denial/slow-down behavior, channel lookup, log secrecy, safe configuration writes, and source ZIP inspection.
 
 The Canvas game is local to the browser; the overlay shows votes and applied patches, not player position. This is a **hackathon prototype**, not a production-ready Twitch service. Live Twitch authorization and Codex session evidence remain mandatory for eligible submission.
 
-See docs/HACKATHON-SUBMISSION.md.
+`npm run package:submission` creates `dist/patchparty-source.zip` from eligible Git-tracked files only. Add intended files to Git before making the final package; `dist/` is ignored.
+
+See docs/HACKATHON-SUBMISSION.md and docs/GO-LIVE-CHECKLIST.md.

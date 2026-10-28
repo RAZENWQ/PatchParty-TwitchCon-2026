@@ -20,6 +20,13 @@ function welcome(id = 'session-1', keepalive = 10) {
   return { data: JSON.stringify({ metadata: { message_type: 'session_welcome' }, payload: { session: { id, keepalive_timeout_seconds: keepalive } } }) };
 }
 
+function chat(text, overrides = {}) {
+  return { data: JSON.stringify({
+    metadata: { message_type: 'notification', subscription_type: 'channel.chat.message' },
+    payload: { event: { chatter_user_id: 'private-user', chatter_user_name: 'PrivateName', message: { text }, ...overrides } }
+  }) };
+}
+
 test('validates token and reports connected only after subscription acknowledgement', async () => {
   MockWebSocket.instances = [];
   const calls = [];
@@ -107,5 +114,33 @@ test('session_reconnect hands over transport without creating a duplicate subscr
   assert.equal(old.closed, true);
   assert.equal(subscriptions, 1);
   assert.equal(reader.status, 'connected');
+  reader.stop();
+});
+
+test('counts genuine chat notifications, parsed commands, ignored messages, and rejected votes', async () => {
+  MockWebSocket.instances = [];
+  const votes = [];
+  const fetchFn = async url => {
+    if (url.includes('/validate')) return { ok: true, json: async () => ({ client_id: 'client', user_id: 'reader', scopes: ['user:read:chat'] }) };
+    return { status: 202, json: async () => ({ data: [{ id: 'sub-1', status: 'enabled', transport: { session_id: 'session-1' } }] }) };
+  };
+  const reader = new TwitchReader({ env, fetchFn, WebSocketClass: MockWebSocket,
+    onVote: vote => { votes.push(vote); return { ok: votes.length === 1 }; } });
+  await reader.start();
+  const ws = MockWebSocket.instances[0];
+  ws.emit('message', welcome());
+  await flush();
+  ws.emit('message', chat('hello stream'));
+  ws.emit('message', chat('!patch 2'));
+  ws.emit('message', chat('!PATCH 3'));
+  ws.emit('message', { data: JSON.stringify({ metadata: { message_type: 'notification', subscription_type: 'channel.follow' }, payload: {} }) });
+  await flush();
+  assert.deepEqual(votes.map(({ choice }) => choice), [2, 3]);
+  assert.deepEqual(reader.diagnostics(), {
+    status: 'connected', configured: true, connectedAt: reader.connectedAt,
+    chatNotifications: 3, validVoteCommands: 2, ignoredMessages: 1, rejectedVotes: 1
+  });
+  assert.match(reader.connectedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.doesNotMatch(JSON.stringify(reader.diagnostics()), /private-user|PrivateName|hello stream|secret-token/);
   reader.stop();
 });

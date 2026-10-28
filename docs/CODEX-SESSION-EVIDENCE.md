@@ -43,3 +43,7 @@ The new tests are offline and dependency-injected. They cover pending then succe
 ## Additional verified Codex session (2026-10-28)
 
 A second genuine `codex exec --json` thread started with session ID **`01a183af-dff2-7a11-b2ef-2f09aff4241b`**, recorded in the local Git-ignored `CODEX-ITERATION-02-LOG.jsonl`. That session authored the device-authorization implementation and offline tests. Its final output is `CODEX-ITERATION-02-RESULT.txt`. No live Twitch login was made. The local commit was blocked by `.git/index.lock` write permissions inside the Codex sandbox, so these changes remain in the working tree pending a normal authorized commit.
+
+## Third verified Codex iteration (2026-10-29)
+
+The current Codex environment exposed the genuine thread identifier **`01a18499-c099-7ed2-b953-a37b0173d704`**. This iteration added aggregate, identity-free EventSub diagnostics and mocked notification tests; a loopback-only diagnostics route; submission copy, video storyboard, and go-live checklist; and a reproducible Git-tracked-source ZIP builder with archive smoke tests. The local Twitch connection had been confirmed before this iteration, but no live chat vote had been observed, and none is claimed here.

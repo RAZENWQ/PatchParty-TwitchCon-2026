@@ -23,10 +23,25 @@ export class TwitchReader {
     this.retryNeedsAuth = false;
     this.keepaliveTimer = null;
     this.lastMessageAt = 0;
+    this.connectedAt = null;
+    this.counters = {
+      chatNotifications: 0,
+      validVoteCommands: 0,
+      ignoredMessages: 0,
+      rejectedVotes: 0
+    };
   }
 
   configured() { return Object.values(this.config).every(Boolean); }
   report(status) { this.status = status; this.onStatus(status); }
+  diagnostics() {
+    return {
+      status: this.status,
+      configured: this.configured(),
+      connectedAt: this.connectedAt,
+      ...this.counters
+    };
+  }
 
   async start() {
     if (!this.configured()) { this.report('not-configured'); return; }
@@ -104,6 +119,7 @@ export class TwitchReader {
         }
         this.reconnectDelay = 2000;
         this.startLiveness(ws, Number(session.keepalive_timeout_seconds || 10));
+        this.connectedAt = new Date().toISOString();
         this.report('connected');
       } else if (type === 'session_keepalive') {
         // Receiving the frame updates lastMessageAt above.
@@ -112,8 +128,17 @@ export class TwitchReader {
         if (typeof target === 'string' && target.startsWith('wss://eventsub.wss.twitch.tv/')) this.connect(target, true);
         else throw new Error('invalid reconnect URL');
       } else if (type === 'notification') {
-        const vote = normalizeTwitchChat(envelope);
-        if (vote) this.onVote(vote);
+        if (envelope.metadata?.subscription_type === 'channel.chat.message') {
+          this.counters.chatNotifications++;
+          const vote = normalizeTwitchChat(envelope);
+          if (vote) {
+            this.counters.validVoteCommands++;
+            const result = this.onVote(vote);
+            if (result && result.ok === false) this.counters.rejectedVotes++;
+          } else {
+            this.counters.ignoredMessages++;
+          }
+        }
       } else if (type === 'revocation') {
         const reason = envelope.payload?.subscription?.status || '';
         if (reason === 'authorization_revoked' || reason === 'user_removed') {

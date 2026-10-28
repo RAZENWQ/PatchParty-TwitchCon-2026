@@ -27,6 +27,9 @@ test('loopback API, duplicate votes, demo and overlay', { timeout: 18000 }, asyn
     const health = await (await fetch(origin + '/api/health')).json();
     assert.equal(health.ok, true);
     assert.equal(health.twitch, 'not-configured');
+    const diagnostics = await (await fetch(origin + '/api/diagnostics')).json();
+    assert.deepEqual(diagnostics, { ok: true, twitch: { status: 'not-configured', configured: false,
+      connectedAt: null, chatNotifications: 0, validVoteCommands: 0, ignoredMessages: 0, rejectedVotes: 0 } });
     const state = await (await fetch(origin + '/api/state')).json();
     assert.equal(state.round, 1);
     assert.equal(state.demo, true);

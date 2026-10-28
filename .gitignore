@@ -7,6 +7,7 @@ CODEX-BUILD-LOG.jsonl
 CODEX-LAST-MESSAGE.txt
 .DS_Store
 coverage/
+dist/
 patchparty-preview.png
 test-profile/
 CODEX-ITERATION-*-LOG.jsonl

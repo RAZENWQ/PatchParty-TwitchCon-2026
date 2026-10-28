@@ -107,6 +107,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/api/health') {
     return reply(res, 200, { ok: true, app: 'PatchParty', uptime: Math.round(process.uptime()), twitch: twitchStatus });
   }
+  if (req.method === 'GET' && pathname === '/api/diagnostics') {
+    if (!localhost(req)) return reply(res, 403, { error: 'loopback_only' });
+    return reply(res, 200, { ok: true, twitch: twitch.diagnostics() });
+  }
   if (req.method === 'GET' && pathname === '/api/state') {
     if (localhost(req) && twitchStatus !== 'connected') ensureDemoSession(req, res);
     return reply(res, 200, readOnlyStatus());
