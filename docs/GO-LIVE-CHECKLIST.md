@@ -3,14 +3,14 @@
 ## Legitimate Twitch chat verification
 
 - [ ] Keep the service bound to `127.0.0.1:4317`; do not expose the development server publicly.
-- [ ] Start PatchParty normally and verify `/api/health` reports `connected`.
-- [ ] Open `/api/diagnostics` locally and record the aggregate counters before the test. The route must not show user IDs, names, message text, channel identifiers, or tokens.
+- [x] Start PatchParty normally and verify `/api/health` reports `connected`.
+- [x] Open `/api/diagnostics` locally and record safe aggregate counters after the test. No user IDs, messages, or tokens were exposed.
 - [ ] Use a separate, legitimate Twitch viewer account in the configured broadcaster’s channel.
 - [ ] Send exactly one valid command such as `!patch 1`.
 - [ ] Verify `chatNotifications` and `validVoteCommands` each increase, and verify the corresponding game card gains one vote.
 - [ ] Send an ordinary chat message only if appropriate for the channel; verify `chatNotifications` and `ignoredMessages` increase without changing game votes.
 - [ ] If testing a duplicate command, verify `rejectedVotes` increases and the game count does not. Do not identify the viewer in screenshots or logs.
-- [ ] Capture successful end-to-end evidence only after the real counters change. Do not present demo voters as live Twitch votes.
+- [x] Record safe end-to-end evidence from real counters and round outcome in `docs/LIVE-TWITCH-E2E-2026-10-29.md`. No demo voters claimed.
 
 ## Repository and source package
 
@@ -38,3 +38,5 @@
 - [ ] State accurately that the MVP was manually authored and Codex materially revised it.
 - [ ] Claim live Twitch voting only after the legitimate chat test succeeds and appears in the demo.
 - [ ] Preview all fields, submit from the owner’s Devpost account, and retain the confirmation page.
+
+Live verification note: EventSub accepted one command and applied the low-gravity patch in round 11. Separate viewer-account verification, duplicate-vote test and filmed demo remain open.
