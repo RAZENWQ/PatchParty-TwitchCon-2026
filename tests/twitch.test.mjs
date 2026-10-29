@@ -48,23 +48,16 @@ test('validates token and reports connected only after subscription acknowledgem
   reader.stop();
 });
 
-test('authorization rejection schedules validation retry without exposing token in status', async () => {
+test('expired token without refresh token requires manual authorization without a retry loop', async () => {
   const timers = [];
   const statuses = [];
-  let validations = 0;
-  const fetchFn = async () => {
-    validations++;
-    return validations === 1 ? { ok: false, status: 401 } : { ok: true, json: async () => ({ client_id: 'client', user_id: 'reader', scopes: ['user:read:chat'] }) };
-  };
+  const fetchFn = async () => ({ ok: false, status: 401 });
   const reader = new TwitchReader({ env, fetchFn, WebSocketClass: MockWebSocket, onVote() {}, onStatus: value => statuses.push(value),
     setTimer: fn => { timers.push(fn); return fn; }, clearTimer() {} });
   await reader.start();
   assert.equal(reader.status, 'authorization-expired');
   assert.equal(statuses.some(value => value.includes('secret-token')), false);
-  timers.shift()();
-  await flush();
-  assert.equal(validations, 2);
-  assert.equal(reader.status, 'connecting');
+  assert.equal(timers.length, 0);
   reader.stop();
 });
 
@@ -72,24 +65,60 @@ test('expired authorization during subscription retries validation rather than b
   MockWebSocket.instances = [];
   const timers = [];
   let validations = 0;
+  let subscriptions = 0;
   const fetchFn = async url => {
     if (url.includes('/validate')) {
       validations++;
       return { ok: true, json: async () => ({ client_id: 'client', user_id: 'reader', scopes: ['user:read:chat'] }) };
     }
-    return { status: 401 };
+    subscriptions++;
+    return subscriptions === 1 ? { status: 401 } : { status: 202, json: async () => ({ data: [{ id: 'sub-2', status: 'enabled', transport: { session_id: 'session-1' } }] }) };
   };
-  const reader = new TwitchReader({ env, fetchFn, WebSocketClass: MockWebSocket, onVote() {},
+  const refreshEnv = { ...env, TWITCH_REFRESH_TOKEN: 'old-refresh', TWITCH_REFRESH_TOKEN_ISSUED_AT: '2026-10-29T00:00:00.000Z' };
+  const saved = [];
+  const reader = new TwitchReader({ env: refreshEnv, fetchFn, WebSocketClass: MockWebSocket, onVote() {},
+    refreshFn: async () => ({ accessToken: 'rotated-access', refreshToken: 'rotated-refresh', refreshTokenIssuedAt: '2026-10-29T01:00:00.000Z' }),
+    saveTokens: async tokens => saved.push(tokens),
     setTimer: fn => { timers.push(fn); return fn; }, clearTimer() {} });
   await reader.start();
   MockWebSocket.instances[0].emit('message', welcome());
   await flush();
-  assert.equal(reader.status, 'authorization-expired');
-  assert.equal(timers.length, 1);
-  timers.shift()();
-  await flush();
-  assert.equal(validations, 2);
+  assert.equal(reader.status, 'connected');
+  assert.equal(reader.config.token, 'rotated-access');
+  assert.equal(reader.config.refreshToken, 'rotated-refresh');
+  assert.equal(saved.length, 1);
+  assert.equal(timers.length, 1); // liveness only
+  assert.equal(validations, 1);
   reader.stop();
+});
+
+test('concurrent authorization failures share one refresh and persistence operation', async () => {
+  let releases;
+  const gate = new Promise(resolve => { releases = resolve; });
+  let refreshes = 0;
+  let saves = 0;
+  const reader = new TwitchReader({ env: { ...env, TWITCH_REFRESH_TOKEN: 'old-refresh' }, onVote() {},
+    refreshFn: async () => { refreshes++; await gate; return { accessToken: 'new-access', refreshToken: 'new-refresh', refreshTokenIssuedAt: '2026-10-29T00:00:00.000Z' }; },
+    saveTokens: async () => { saves++; } });
+  const first = reader.recoverAuthorization();
+  const second = reader.recoverAuthorization();
+  releases();
+  assert.deepEqual(await Promise.all([first, second]), [true, true]);
+  assert.equal(refreshes, 1);
+  assert.equal(saves, 1);
+});
+
+test('transient refresh failure is bounded and does not leak secrets', async () => {
+  const timers = [];
+  const statuses = [];
+  let refreshes = 0;
+  const reader = new TwitchReader({ env: { ...env, TWITCH_REFRESH_TOKEN: 'private-refresh' }, onVote() {},
+    onStatus: status => statuses.push(status), refreshFn: async () => { refreshes++; throw new Error('private-refresh secret-token'); },
+    setTimer: fn => { timers.push(fn); return fn; }, clearTimer() {} });
+  for (let attempt = 0; attempt < 5; attempt++) await reader.recoverAuthorization();
+  assert.equal(timers.length, 1);
+  assert.equal(refreshes, 3);
+  assert.doesNotMatch(JSON.stringify({ statuses, diagnostics: reader.diagnostics() }), /private-refresh|secret-token/);
 });
 
 test('session_reconnect hands over transport without creating a duplicate subscription', async () => {

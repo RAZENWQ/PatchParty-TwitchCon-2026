@@ -1,12 +1,15 @@
 import { normalizeTwitchChat } from './core.mjs';
+import { refreshTwitchTokens, TwitchLoginError, writeEnvConfig } from './twitch-device-auth.mjs';
 
 const DEFAULT_WS_URL = 'wss://eventsub.wss.twitch.tv/ws';
 
 export class TwitchReader {
   constructor({ env = process.env, onVote, onStatus = () => {}, fetchFn = globalThis.fetch,
-    WebSocketClass = globalThis.WebSocket, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+    WebSocketClass = globalThis.WebSocket, setTimer = setTimeout, clearTimer = clearTimeout,
+    refreshFn = refreshTwitchTokens, saveTokens } = {}) {
     this.config = {
       clientId: env.TWITCH_CLIENT_ID || '', token: env.TWITCH_USER_ACCESS_TOKEN || '',
+      refreshToken: env.TWITCH_REFRESH_TOKEN || '', refreshTokenIssuedAt: env.TWITCH_REFRESH_TOKEN_ISSUED_AT || '',
       broadcasterId: env.TWITCH_BROADCASTER_ID || '', readerId: env.TWITCH_READER_USER_ID || ''
     };
     this.onVote = onVote;
@@ -15,6 +18,14 @@ export class TwitchReader {
     this.WebSocketClass = WebSocketClass;
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
+    this.refreshFn = refreshFn;
+    this.saveTokens = saveTokens || (tokens => writeEnvConfig({ config: {
+      clientId: this.config.clientId, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
+      refreshTokenIssuedAt: tokens.refreshTokenIssuedAt, readerUserId: this.config.readerId,
+      broadcasterId: this.config.broadcasterId
+    }, confirmOverwrite: async () => true }));
+    this.refreshing = null;
+    this.transientAuthRetries = 0;
     this.status = 'not-configured';
     this.ws = null;
     this.stopped = false;
@@ -32,7 +43,7 @@ export class TwitchReader {
     };
   }
 
-  configured() { return Object.values(this.config).every(Boolean); }
+  configured() { return Boolean(this.config.clientId && this.config.token && this.config.broadcasterId && this.config.readerId); }
   report(status) { this.status = status; this.onStatus(status); }
   diagnostics() {
     return {
@@ -58,15 +69,52 @@ export class TwitchReader {
       const validation = await this.fetch('https://id.twitch.tv/oauth2/validate', {
         headers: { Authorization: 'OAuth ' + token }, signal: AbortSignal.timeout(10000)
       });
-      if (!validation.ok) throw Object.assign(new Error('authorization rejected (' + validation.status + ')'), { auth: true });
+      if (!validation.ok) throw Object.assign(new Error('authorization rejected'), { auth: validation.status === 401 });
       const info = await validation.json();
       if (info.client_id !== clientId || info.user_id !== readerId || !info.scopes?.includes('user:read:chat'))
         throw Object.assign(new Error('authorization does not match configured reader or scope'), { auth: true });
+      this.transientAuthRetries = 0;
       this.connect(DEFAULT_WS_URL, false);
     } catch (err) {
-      this.report(err.auth ? 'authorization-expired' : 'authorization-error');
-      this.scheduleRetry(true);
+      if (err.auth) {
+        if (await this.recoverAuthorization()) this.connect(DEFAULT_WS_URL, false);
+      } else {
+        this.report('authorization-error');
+        if (++this.transientAuthRetries <= 3) this.scheduleRetry(true);
+      }
     }
+  }
+
+  async recoverAuthorization() {
+    if (this.refreshing) return this.refreshing;
+    if (!this.config.refreshToken) { this.report('authorization-expired'); return false; }
+    if (this.transientAuthRetries >= 3) { this.report('authorization-error'); return false; }
+    this.report('refreshing-authorization');
+    this.refreshing = (async () => {
+      let refreshed = false;
+      try {
+        const tokens = await this.refreshFn({ clientId: this.config.clientId,
+          refreshToken: this.config.refreshToken, readerUserId: this.config.readerId,
+          issuedAt: this.config.refreshTokenIssuedAt, fetchFn: this.fetch });
+        refreshed = true;
+        await this.saveTokens(tokens);
+        this.config.token = tokens.accessToken;
+        this.config.refreshToken = tokens.refreshToken;
+        this.config.refreshTokenIssuedAt = tokens.refreshTokenIssuedAt;
+        this.transientAuthRetries = 0;
+        return true;
+      } catch (error) {
+        if (refreshed || (error instanceof TwitchLoginError && error.code === 'needs-reauthorization')) {
+          this.config.refreshToken = '';
+          this.report('authorization-expired');
+        } else {
+          this.report('authorization-error');
+          if (++this.transientAuthRetries < 3) this.scheduleRetry(true);
+        }
+        return false;
+      } finally { this.refreshing = null; }
+    })();
+    return this.refreshing;
   }
 
   scheduleRetry(revalidate = false) {
@@ -115,7 +163,11 @@ export class TwitchReader {
           this.ws = ws;
           if (context.previous && context.previous !== ws) context.previous.close();
         } else {
-          await this.subscribe(session.id);
+          try { await this.subscribe(session.id); }
+          catch (error) {
+            if (!error.auth || !(await this.recoverAuthorization())) throw error;
+            await this.subscribe(session.id);
+          }
         }
         this.reconnectDelay = 2000;
         this.startLiveness(ws, Number(session.keepalive_timeout_seconds || 10));
@@ -142,8 +194,7 @@ export class TwitchReader {
       } else if (type === 'revocation') {
         const reason = envelope.payload?.subscription?.status || '';
         if (reason === 'authorization_revoked' || reason === 'user_removed') {
-          this.report('authorization-expired');
-          this.scheduleRetry(true);
+          await this.recoverAuthorization();
           try { ws.close(); } catch { /* noop */ }
         } else {
           this.report('subscription-revoked');
@@ -151,8 +202,7 @@ export class TwitchReader {
       }
     } catch (err) {
       if (err.auth) {
-        this.report('authorization-expired');
-        this.scheduleRetry(true);
+        await this.recoverAuthorization();
         try { ws.close(); } catch { /* noop */ }
       } else {
         this.report('event-error');

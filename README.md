@@ -49,10 +49,10 @@ The owner can authorize chat reading from a phone with Twitch's documented publi
 
 3. The CLI prints only a verified `https://www.twitch.tv/activate...` address and user code. Open that address on the owner's phone, sign in to the intended chat-reading account, confirm the matching code, review the `user:read:chat` permission, and approve. Press Ctrl+C to cancel safely.
 4. After Twitch issues a token, the CLI validates the application Client ID, required scope, and reader user ID. With `--channel`, it resolves that exact login through Helix; without it, the authorized token owner is used as the broadcaster.
-5. If `.env` already exists, explicitly answer `y` before only the four Twitch values are replaced. `HOST`, `PORT`, `ROUND_SECONDS`, comments, and other settings are preserved. Declining leaves the file unchanged. `.env` is Git-ignored and secret: never print, share, upload, or commit it.
+5. If `.env` already exists, explicitly answer `y` before only the Twitch values are replaced. `HOST`, `PORT`, `ROUND_SECONDS`, comments, and other settings are preserved. Declining leaves the file unchanged. `.env` is Git-ignored and secret: never print, share, upload, or commit it.
 6. Start/restart with `npm.cmd start`. The backend validates the token, opens Twitch EventSub WebSocket, and subscribes to `channel.chat.message`. From a separate legitimate viewer account, send `!patch 1` in the selected channel and verify the counter changes and `/api/health` reports Twitch connected.
 
-Device-flow access tokens currently expire after about four hours, so this is suitable for a short live demonstration. This prototype intentionally does not persist or rotate Twitch refresh tokens; rerun the login command when the access token expires.
+Existing `.env` files created by an earlier PatchParty version have no refresh token. Run `npm.cmd run twitch:login -- --client-id=YOUR_CLIENT_ID` once to reauthorize and save the initial rotating refresh token. After that, the backend reactively refreshes on an authorization failure, validates the new access token, and atomically saves both rotated tokens. Twitch refresh tokens rotate on every use and expire after 30 days; invalid, revoked, expired, or incomplete refresh responses require the owner to run the login command again. PatchParty does not blindly retry an invalid authorization.
 
 The owner has confirmed that the local service reached Twitch's connected state. No live chat vote has yet been observed, so end-to-end command delivery remains to be demonstrated with a legitimate viewer. Automated authorization and EventSub lifecycle tests use injected offline mocks. See Twitch's official [Device Code Flow documentation](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow).
 
@@ -74,7 +74,7 @@ The app uses no external scripts, images or copyrighted music.
 
 Empty rounds do not activate a patch. A genuine round winner becomes the server-authoritative active patch for both the game and OBS overlay until another genuine winner replaces it or the rounds are reset. Demo voting uses an HttpOnly browser-session identity, and the built-in sample voters cannot be counted twice in one round.
 
-The Twitch backend now validates authorization, verifies the subscription acknowledgement before reporting connected, retries validation after authorization expiry, performs EventSub reconnect handover, and detects stale connections. These lifecycle paths are covered with mocks only; no live Twitch integration test has been performed.
+The Twitch backend validates authorization, verifies the subscription acknowledgement before reporting connected, performs bounded reactive token refresh, resubscribes after recovery, performs EventSub reconnect handover, and detects stale connections. These lifecycle paths are covered with offline mocks only; no live refresh or chat-message integration test has been performed.
 
 ~~~powershell
 npm run check
@@ -82,7 +82,7 @@ npm test
 npm run package:submission
 ~~~
 
-Node's built-in tests cover strict vote parsing, Twitch event normalization, duplicate and empty rounds, reset state, demo identities, HTTP endpoints, privacy-safe Twitch counters, subscription acknowledgement, authorization retry, reconnect handover, device-code pending/success/expiry/denial/slow-down behavior, channel lookup, log secrecy, safe configuration writes, and source ZIP inspection.
+Node's built-in tests cover strict vote parsing, Twitch event normalization, duplicate and empty rounds, reset state, demo identities, HTTP endpoints, privacy-safe Twitch counters, subscription acknowledgement, bounded authorization recovery, two successive token rotations, invalid/revoked/old refresh tokens, validation rejection, reconnect handover, device-code pending/success/expiry/denial/slow-down behavior, channel lookup, log secrecy, safe configuration writes, and source ZIP inspection.
 
 The Canvas game is local to the browser; the overlay shows votes and applied patches, not player position. This is a **hackathon prototype**, not a production-ready Twitch service. Live Twitch authorization and Codex session evidence remain mandatory for eligible submission.
 

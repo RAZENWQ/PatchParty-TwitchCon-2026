@@ -4,12 +4,13 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   authorizeTwitchChat, lookupBroadcaster, mergeEnv, pollDeviceToken,
-  TwitchLoginError, writeEnvConfig
+  refreshTwitchTokens, TwitchLoginError, writeEnvConfig
 } from '../src/twitch-device-auth.mjs';
 
 const CLIENT_ID = 'abcdefghij1234567890';
 const TOKEN = 'never-print-this-access-token';
 const DEVICE_CODE = 'never-print-this-device-code';
+const REFRESH = 'never-print-this-refresh-token';
 
 function response(status, body) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
@@ -28,7 +29,7 @@ test('device login handles pending then success, validates, and never gives secr
     if (url.endsWith('/device')) return deviceResponse();
     if (url.endsWith('/token') && requests.filter(item => item.url.endsWith('/token')).length === 1)
       return response(400, { status: 400, message: 'authorization_pending' });
-    if (url.endsWith('/token')) return response(200, { access_token: TOKEN, scope: ['user:read:chat'] });
+    if (url.endsWith('/token')) return response(200, { access_token: TOKEN, refresh_token: REFRESH, scope: ['user:read:chat'] });
     if (url.endsWith('/validate')) return response(200, { client_id: CLIENT_ID, user_id: 'reader-42', scopes: ['user:read:chat'] });
     throw new Error('unexpected URL');
   };
@@ -36,7 +37,9 @@ test('device login handles pending then success, validates, and never gives secr
   const result = await authorizeTwitchChat({ clientId: CLIENT_ID, fetchFn,
     sleepFn: async ms => { clock += ms; }, nowFn: () => clock,
     onActivation: value => displayed.push(JSON.stringify(value)) });
-  assert.deepEqual(result, { clientId: CLIENT_ID, accessToken: TOKEN, readerUserId: 'reader-42', broadcasterId: 'reader-42' });
+  assert.equal(result.refreshToken, REFRESH);
+  assert.equal(result.accessToken, TOKEN);
+  assert.equal(result.readerUserId, 'reader-42');
   assert.equal(requests.filter(item => item.url.endsWith('/token')).length, 2);
   assert.match(displayed[0], /ABCD-EFGH/);
   assert.doesNotMatch(displayed.join(' '), new RegExp(`${TOKEN}|${DEVICE_CODE}`));
@@ -82,7 +85,7 @@ test('slow_down increases the next polling interval', async () => {
   let call = 0;
   const result = await pollDeviceToken({ clientId: CLIENT_ID,
     device: { deviceCode: DEVICE_CODE, expiresIn: 60, interval: 1 },
-    fetchFn: async () => ++call === 1 ? response(400, { message: 'slow_down' }) : response(200, { access_token: TOKEN }),
+    fetchFn: async () => ++call === 1 ? response(400, { message: 'slow_down' }) : response(200, { access_token: TOKEN, refresh_token: REFRESH }),
     sleepFn: async ms => { waits.push(ms); clock += ms; }, nowFn: () => clock });
   assert.deepEqual(waits, [1000, 6000]);
   assert.equal(result.accessToken, TOKEN);
@@ -101,12 +104,13 @@ test('channel lookup uses bearer token and exact normalized login', async () => 
 });
 
 test('environment merge preserves benign and unknown configuration without duplicate Twitch keys', () => {
-  const output = mergeEnv('HOST=127.0.0.1\nPORT=4317\nROUND_SECONDS=30\nCUSTOM=value\nTWITCH_CLIENT_ID=old\nTWITCH_CLIENT_ID=duplicate\n', {
-    clientId: CLIENT_ID, accessToken: TOKEN, readerUserId: 'reader-42', broadcasterId: 'broadcaster-9'
+  const output = mergeEnv('HOST=127.0.0.1\nPORT=4317\nROUND_SECONDS=30\nCUSTOM=value\nTWITCH_CLIENT_ID=old\nTWITCH_CLIENT_ID=duplicate\nTWITCH_REFRESH_TOKEN=old\nTWITCH_REFRESH_TOKEN=duplicate\n', {
+    clientId: CLIENT_ID, accessToken: TOKEN, refreshToken: REFRESH, refreshTokenIssuedAt: '2026-10-29T00:00:00.000Z', readerUserId: 'reader-42', broadcasterId: 'broadcaster-9'
   });
   assert.match(output, /^HOST=127\.0\.0\.1\nPORT=4317\nROUND_SECONDS=30\nCUSTOM=value\n/m);
   assert.equal((output.match(/^TWITCH_CLIENT_ID=/gm) || []).length, 1);
   assert.match(output, new RegExp(`TWITCH_USER_ACCESS_TOKEN=${TOKEN}`));
+  assert.equal((output.match(/^TWITCH_REFRESH_TOKEN=/gm) || []).length, 1);
 });
 
 test('safe config write requires confirmation and preserves existing non-Twitch settings', async t => {
@@ -115,7 +119,7 @@ test('safe config write requires confirmation and preserves existing non-Twitch 
   const envPath = join(folder, '.env');
   const original = 'HOST=127.0.0.1\nPORT=4317\nROUND_SECONDS=45\nNOTE=keep-me\n';
   await writeFile(envPath, original);
-  const config = { clientId: CLIENT_ID, accessToken: TOKEN, readerUserId: 'reader-42', broadcasterId: 'broadcaster-9' };
+  const config = { clientId: CLIENT_ID, accessToken: TOKEN, refreshToken: REFRESH, refreshTokenIssuedAt: '2026-10-29T00:00:00.000Z', readerUserId: 'reader-42', broadcasterId: 'broadcaster-9' };
   await assert.rejects(() => writeEnvConfig({ envPath, config, confirmOverwrite: async () => false }),
     error => error.code === 'save-declined');
   assert.equal(await readFile(envPath, 'utf8'), original);
@@ -128,6 +132,52 @@ test('safe config write requires confirmation and preserves existing non-Twitch 
 test('safe config writer refuses symbolic-link targets', async () => {
   const fs = { lstat: async () => ({ isSymbolicLink: () => true, isFile: () => false }) };
   await assert.rejects(() => writeEnvConfig({ envPath: '.env', fs,
-    config: { clientId: CLIENT_ID, accessToken: TOKEN, readerUserId: 'reader', broadcasterId: 'broadcaster' },
+    config: { clientId: CLIENT_ID, accessToken: TOKEN, refreshToken: REFRESH, refreshTokenIssuedAt: '2026-10-29T00:00:00.000Z', readerUserId: 'reader', broadcasterId: 'broadcaster' },
     confirmOverwrite: async () => true }), error => error.code === 'unsafe-env');
+});
+
+test('refresh rotates twice and validates every access token', async () => {
+  let generation = 0;
+  const fetchFn = async (url, options) => {
+    if (url.endsWith('/token')) {
+      generation++;
+      assert.equal(options.body.get('refresh_token'), generation === 1 ? REFRESH : 'rotated-1');
+      return response(200, { access_token: `access-${generation}`, refresh_token: `rotated-${generation}` });
+    }
+    return response(200, { client_id: CLIENT_ID, user_id: 'reader-42', scopes: ['user:read:chat'] });
+  };
+  const first = await refreshTwitchTokens({ clientId: CLIENT_ID, refreshToken: REFRESH, readerUserId: 'reader-42', fetchFn, nowFn: () => 1 });
+  const second = await refreshTwitchTokens({ clientId: CLIENT_ID, refreshToken: first.refreshToken, readerUserId: 'reader-42', fetchFn, nowFn: () => 2 });
+  assert.equal(second.refreshToken, 'rotated-2');
+  assert.equal(generation, 2);
+});
+
+test('refresh safely handles invalid, revoked, missing replacement, old, validation 401, and network errors', async () => {
+  const cases = [
+    [async () => response(400, { message: REFRESH }), 'needs-reauthorization'],
+    [async () => response(401, {}), 'needs-reauthorization'],
+    [async url => url.endsWith('/token') ? response(200, { access_token: TOKEN }) : response(200, {}), 'invalid-response'],
+    [async url => url.endsWith('/token') ? response(200, { access_token: TOKEN, refresh_token: 'next' }) : response(401, {}), 'invalid-token'],
+    [async () => { throw new Error(`network ${REFRESH}`); }, 'network-error']
+  ];
+  for (const [fetchFn, code] of cases) {
+    await assert.rejects(() => refreshTwitchTokens({ clientId: CLIENT_ID, refreshToken: REFRESH,
+      readerUserId: 'reader-42', fetchFn }), error => error.code === code && !error.message.includes(REFRESH));
+  }
+  await assert.rejects(() => refreshTwitchTokens({ clientId: CLIENT_ID, refreshToken: REFRESH,
+    readerUserId: 'reader-42', issuedAt: '2026-09-01T00:00:00.000Z', nowFn: () => Date.parse('2026-10-29T00:00:00.000Z') }),
+  error => error.code === 'needs-reauthorization');
+});
+
+test('refresh rejects mismatched client, scope, or reader before persistence', async () => {
+  for (const validation of [
+    { client_id: 'different-client', user_id: 'reader-42', scopes: ['user:read:chat'] },
+    { client_id: CLIENT_ID, user_id: 'reader-42', scopes: [] },
+    { client_id: CLIENT_ID, user_id: 'different-reader', scopes: ['user:read:chat'] }
+  ]) {
+    const fetchFn = async url => url.endsWith('/token')
+      ? response(200, { access_token: TOKEN, refresh_token: 'rotated' }) : response(200, validation);
+    await assert.rejects(() => refreshTwitchTokens({ clientId: CLIENT_ID, refreshToken: REFRESH,
+      readerUserId: 'reader-42', fetchFn }), error => ['client-mismatch', 'scope-mismatch', 'reader-mismatch'].includes(error.code));
+  }
 });

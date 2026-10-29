@@ -1,4 +1,5 @@
 import { lstat, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 
 export const TWITCH_SCOPE = 'user:read:chat';
@@ -8,7 +9,8 @@ const VALIDATE_URL = 'https://id.twitch.tv/oauth2/validate';
 const USERS_URL = 'https://api.twitch.tv/helix/users';
 const GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
 const CONFIG_KEYS = [
-  'TWITCH_CLIENT_ID', 'TWITCH_USER_ACCESS_TOKEN',
+  'TWITCH_CLIENT_ID', 'TWITCH_USER_ACCESS_TOKEN', 'TWITCH_REFRESH_TOKEN',
+  'TWITCH_REFRESH_TOKEN_ISSUED_AT',
   'TWITCH_READER_USER_ID', 'TWITCH_BROADCASTER_ID'
 ];
 
@@ -120,7 +122,10 @@ export async function pollDeviceToken({ clientId, device, fetchFn = globalThis.f
     }, signal);
     const body = await responseJson(response, 'token-response-invalid');
     if (response.ok && body.access_token) {
-      return { accessToken: cleanSingleLine(body.access_token, 'access token') };
+      return {
+        accessToken: cleanSingleLine(body.access_token, 'access token'),
+        refreshToken: cleanSingleLine(body.refresh_token, 'refresh token')
+      };
     }
     const failure = tokenFailure(body.message);
     if (failure === 'pending') continue;
@@ -134,15 +139,44 @@ export async function pollDeviceToken({ clientId, device, fetchFn = globalThis.f
 }
 
 export async function validateAccessToken({ clientId, accessToken, fetchFn = globalThis.fetch, signal } = {}) {
+  const cleanClientId = validateClientId(clientId);
+  const cleanAccessToken = cleanSingleLine(accessToken, 'access token');
   const response = await twitchFetch(fetchFn, VALIDATE_URL, {
-    headers: { Authorization: `OAuth ${accessToken}` }, signal
+    headers: { Authorization: `OAuth ${cleanAccessToken}` }, signal
   }, signal);
   if (!response.ok) throw new TwitchLoginError('invalid-token', 'Twitch rejected the issued access token.');
   const body = await responseJson(response, 'validation-response-invalid');
-  if (body.client_id !== clientId) throw new TwitchLoginError('client-mismatch', 'The issued token belongs to a different Twitch application.');
+  if (body.client_id !== cleanClientId) throw new TwitchLoginError('client-mismatch', 'The issued token belongs to a different Twitch application.');
   if (!Array.isArray(body.scopes) || !body.scopes.includes(TWITCH_SCOPE))
     throw new TwitchLoginError('scope-mismatch', `The issued token is missing ${TWITCH_SCOPE}.`);
   return { readerUserId: cleanSingleLine(body.user_id, 'reader user ID') };
+}
+
+export async function refreshTwitchTokens({ clientId, refreshToken, readerUserId,
+  fetchFn = globalThis.fetch, signal, nowFn = Date.now, issuedAt } = {}) {
+  const cleanClientId = validateClientId(clientId);
+  const cleanRefreshToken = cleanSingleLine(refreshToken, 'refresh token');
+  const cleanReaderId = cleanSingleLine(readerUserId, 'reader user ID');
+  if (issuedAt) {
+    const timestamp = Date.parse(issuedAt);
+    if (!Number.isFinite(timestamp) || nowFn() - timestamp >= 30 * 24 * 60 * 60 * 1000)
+      throw new TwitchLoginError('needs-reauthorization', 'Twitch authorization must be completed again.');
+  }
+  const response = await twitchFetch(fetchFn, TOKEN_URL, {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: formBody({ client_id: cleanClientId, grant_type: 'refresh_token', refresh_token: cleanRefreshToken }), signal
+  }, signal);
+  if (response.status === 400 || response.status === 401)
+    throw new TwitchLoginError('needs-reauthorization', 'Twitch authorization must be completed again.');
+  if (!response.ok) throw new TwitchLoginError('refresh-failed', 'Twitch token refresh failed temporarily.');
+  const body = await responseJson(response, 'refresh-response-invalid');
+  const accessToken = cleanSingleLine(body.access_token, 'access token');
+  // Twitch refresh tokens rotate. Never reuse the consumed token when a response omits its replacement.
+  const nextRefreshToken = cleanSingleLine(body.refresh_token, 'refresh token');
+  const validated = await validateAccessToken({ clientId: cleanClientId, accessToken, fetchFn, signal });
+  if (validated.readerUserId !== cleanReaderId)
+    throw new TwitchLoginError('reader-mismatch', 'The refreshed token belongs to a different Twitch user.');
+  return { accessToken, refreshToken: nextRefreshToken, refreshTokenIssuedAt: new Date(nowFn()).toISOString() };
 }
 
 export async function lookupBroadcaster({ clientId, accessToken, channel, fetchFn = globalThis.fetch, signal } = {}) {
@@ -165,13 +199,14 @@ export async function authorizeTwitchChat({ clientId, channel, fetchFn = globalT
   const cleanClientId = validateClientId(clientId);
   const device = await requestDeviceCode({ clientId: cleanClientId, fetchFn, signal });
   onActivation({ verificationUri: device.verificationUri, userCode: device.userCode, expiresIn: device.expiresIn });
-  const { accessToken } = await pollDeviceToken({ clientId: cleanClientId, device, fetchFn, sleepFn, nowFn, signal });
+  const { accessToken, refreshToken } = await pollDeviceToken({ clientId: cleanClientId, device, fetchFn, sleepFn, nowFn, signal });
   const { readerUserId } = await validateAccessToken({ clientId: cleanClientId, accessToken, fetchFn, signal });
   const cleanChannel = validateChannel(channel);
   const broadcasterId = cleanChannel
     ? (await lookupBroadcaster({ clientId: cleanClientId, accessToken, channel: cleanChannel, fetchFn, signal })).broadcasterId
     : readerUserId;
-  return { clientId: cleanClientId, accessToken, readerUserId, broadcasterId };
+  return { clientId: cleanClientId, accessToken, refreshToken,
+    refreshTokenIssuedAt: new Date(nowFn()).toISOString(), readerUserId, broadcasterId };
 }
 
 function envLine(key, value) { return `${key}=${value}`; }
@@ -180,6 +215,8 @@ export function mergeEnv(existing, config) {
   for (const value of Object.values(config)) cleanSingleLine(value, 'configuration value');
   const replacements = new Map([
     ['TWITCH_CLIENT_ID', config.clientId], ['TWITCH_USER_ACCESS_TOKEN', config.accessToken],
+    ['TWITCH_REFRESH_TOKEN', config.refreshToken],
+    ['TWITCH_REFRESH_TOKEN_ISSUED_AT', config.refreshTokenIssuedAt],
     ['TWITCH_READER_USER_ID', config.readerUserId], ['TWITCH_BROADCASTER_ID', config.broadcasterId]
   ]);
   const seen = new Set();
@@ -215,12 +252,17 @@ export async function writeEnvConfig({ envPath = '.env', config, confirmOverwrit
     throw new TwitchLoginError('save-declined', 'The existing .env file was left unchanged.');
   const output = mergeEnv(existing, config);
   await fs.mkdir(dirname(target), { recursive: true });
-  const temporary = `${target}.tmp-${process.pid}`;
+  const temporary = `${target}.tmp-${process.pid}-${randomUUID()}`;
   try {
     await fs.writeFile(temporary, output, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    if (exists) {
+      const current = await fs.lstat(target);
+      if (current.isSymbolicLink() || !current.isFile()) throw new TwitchLoginError('unsafe-env', 'The .env target changed before it could be saved.');
+    }
     await fs.rename(temporary, target);
-  } catch {
+  } catch (error) {
     try { await fs.unlink(temporary); } catch { /* best effort cleanup */ }
+    if (error instanceof TwitchLoginError) throw error;
     throw new TwitchLoginError('env-write-failed', 'Could not safely save the .env file.');
   }
   return target;
