@@ -47,3 +47,7 @@ A second genuine `codex exec --json` thread started with session ID **`01a183af-
 ## Third verified Codex iteration (2026-10-29)
 
 The current Codex environment exposed the genuine thread identifier **`01a18499-c099-7ed2-b953-a37b0173d704`**. This iteration added aggregate, identity-free EventSub diagnostics and mocked notification tests; a loopback-only diagnostics route; submission copy, video storyboard, and go-live checklist; and a reproducible Git-tracked-source ZIP builder with archive smoke tests. The local Twitch connection had been confirmed before this iteration, but no live chat vote had been observed, and none is claimed here.
+
+## Fourth verified Codex iteration (2026-10-29)
+
+Codex CLI thread ID **`01a1892a-cf53-7a70-83b0-ec315b037aa7`** is recorded in the local Git-ignored `CODEX-ITERATION-04-LOG.jsonl`. It implemented public-client Twitch Device Code refresh-token capture, verified rotating token exchange and scoped persistence, single-flight authorization recovery and offline regression tests. Final tests: **27 passed, 0 failed**. Host Git commit: **`cc9ff1f`**. The session did not access real Twitch credentials or make a live Twitch API request. The existing real Twitch access token had expired, and a new user authorization remains necessary for live acceptance testing.
