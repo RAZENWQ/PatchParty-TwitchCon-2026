@@ -33,6 +33,7 @@ export class TwitchReader {
     this.timer = null;
     this.retryNeedsAuth = false;
     this.keepaliveTimer = null;
+    this.authRenewalTimer = null;
     this.lastMessageAt = 0;
     this.connectedAt = null;
     this.counters = {
@@ -74,6 +75,7 @@ export class TwitchReader {
       if (info.client_id !== clientId || info.user_id !== readerId || !info.scopes?.includes('user:read:chat'))
         throw Object.assign(new Error('authorization does not match configured reader or scope'), { auth: true });
       this.transientAuthRetries = 0;
+      this.scheduleTokenRenewal(Number(info.expires_in));
       this.connect(DEFAULT_WS_URL, false);
     } catch (err) {
       if (err.auth) {
@@ -115,6 +117,29 @@ export class TwitchReader {
       } finally { this.refreshing = null; }
     })();
     return this.refreshing;
+  }
+
+  scheduleTokenRenewal(expiresIn) {
+    this.clearTimer(this.authRenewalTimer);
+    this.authRenewalTimer = null;
+    if (!this.config.refreshToken || !Number.isFinite(expiresIn) || expiresIn <= 0) return;
+    const delay = Math.min(2 * 60 * 60 * 1000, Math.max(15000, (expiresIn - 300) * 1000));
+    this.authRenewalTimer = this.setTimer(() => {
+      this.authRenewalTimer = null;
+      void this.renewConnectedAuthorization();
+    }, delay);
+  }
+
+  async renewConnectedAuthorization() {
+    if (this.stopped) return;
+    const renewed = await this.recoverAuthorization();
+    if (this.stopped) return;
+    const old = this.ws;
+    this.ws = null;
+    this.stopLiveness();
+    try { old?.close(); } catch { /* noop */ }
+    if (renewed) await this.authenticateAndConnect();
+    else if (this.status !== 'authorization-expired') this.scheduleRetry(true);
   }
 
   scheduleRetry(revalidate = false) {
@@ -256,6 +281,8 @@ export class TwitchReader {
     this.timer = null;
     this.retryNeedsAuth = false;
     this.stopLiveness();
+    this.clearTimer(this.authRenewalTimer);
+    this.authRenewalTimer = null;
     if (this.ws) { try { this.ws.close(); } catch { /* noop */ } }
   }
 }

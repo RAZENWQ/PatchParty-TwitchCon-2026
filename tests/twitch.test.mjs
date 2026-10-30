@@ -173,3 +173,52 @@ test('counts genuine chat notifications, parsed commands, ignored messages, and 
   assert.doesNotMatch(JSON.stringify(reader.diagnostics()), /private-user|PrivateName|hello stream|secret-token/);
   reader.stop();
 });
+
+test('renews access tokens before expiry and creates a fresh EventSub subscription', async () => {
+  MockWebSocket.instances = [];
+  const timers = [];
+  const saved = [];
+  const refreshEnv = {
+    ...env, TWITCH_REFRESH_TOKEN: 'rotating-refresh',
+    TWITCH_REFRESH_TOKEN_ISSUED_AT: '2026-10-30T00:00:00.000Z'
+  };
+  const fetchFn = async (url, options) => {
+    if (url.includes('/validate')) {
+      return { ok: true, json: async () => ({
+        client_id: 'client', user_id: 'reader', scopes: ['user:read:chat'], expires_in: 3600
+      }) };
+    }
+    const sessionId = JSON.parse(options.body).transport.session_id;
+    return { status: 202, json: async () => ({
+      data: [{ id: 'sub-' + sessionId, status: 'enabled', transport: { session_id: sessionId } }]
+    }) };
+  };
+  const reader = new TwitchReader({
+    env: refreshEnv, fetchFn, WebSocketClass: MockWebSocket, onVote() {},
+    setTimer: (fn, delay) => { timers.push({ fn, delay }); return fn; },
+    clearTimer() {}, refreshFn: async () => ({
+      accessToken: 'new-access', refreshToken: 'new-refresh',
+      refreshTokenIssuedAt: '2026-10-30T01:00:00.000Z'
+    }), saveTokens: async data => saved.push(data)
+  });
+  await reader.start();
+  const first = MockWebSocket.instances[0];
+  first.emit('message', welcome('session-1'));
+  await flush();
+  assert.equal(reader.status, 'connected');
+  const proactive = timers.find(t => t.delay > 1000000);
+  assert.ok(proactive);
+  proactive.fn();
+  await flush();
+  assert.equal(saved.length, 1);
+  assert.equal(reader.config.token, 'new-access');
+  assert.equal(first.closed, true);
+  const second = MockWebSocket.instances.at(-1);
+  assert.notEqual(second, first);
+  second.emit('message', welcome('session-2'));
+  await flush();
+  assert.equal(reader.status, 'connected');
+  assert.equal(reader.ws, second);
+  assert.ok(timers.filter(t => t.delay > 1000000).length >= 2);
+  reader.stop();
+});
