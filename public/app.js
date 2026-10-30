@@ -67,7 +67,11 @@ function applyState(state) {
   if (el('total-votes')) el('total-votes').textContent = String(state.totalVotes);
   if (el('connection')) el('connection').textContent = connectionText(state.twitch);
   if (el('mode-label')) el('mode-label').textContent = state.demo ? 'SANDBOX / DEMO' : 'LIVE TWITCH / VERIFIED';
-  if (el('demo-actions')) el('demo-actions').hidden = !state.demo;
+  const demoControls = el('demo-actions');
+  if (demoControls) {
+    demoControls.hidden = !state.demo;
+    demoControls.style.display = state.demo ? 'flex' : 'none';
+  }
   if (seenGeneration !== null && seenGeneration !== state.generation) {
     logged.length = 0;
     seenResult = '';

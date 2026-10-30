@@ -1,6 +1,6 @@
 # PatchParty — Twitch Chat Becomes the Game Designer
 
-**Status: playable Codex-refined prototype / live Twitch connection confirmed / no live chat vote observed yet.**
+**Status: playable Codex-refined prototype / Twitch EventSub E2E voting verified twice on October 30, 2026.**
 
 A game for Twitch: the broadcaster pilots a character through an arena, and chat voters **rewrite the rules** every 30 seconds. Viewers vote with **!patch 1**, **!patch 2**, **!patch 3**; one vote per user per round. The winning patch changes gameplay.
 
@@ -52,9 +52,9 @@ The owner can authorize chat reading from a phone with Twitch's documented publi
 5. If `.env` already exists, explicitly answer `y` before only the Twitch values are replaced. `HOST`, `PORT`, `ROUND_SECONDS`, comments, and other settings are preserved. Declining leaves the file unchanged. `.env` is Git-ignored and secret: never print, share, upload, or commit it.
 6. Start/restart with `npm.cmd start`. The backend validates the token, opens Twitch EventSub WebSocket, and subscribes to `channel.chat.message`. From a separate legitimate viewer account, send `!patch 1` in the selected channel and verify the counter changes and `/api/health` reports Twitch connected.
 
-Existing `.env` files created by an earlier PatchParty version have no refresh token. Run `npm.cmd run twitch:login -- --client-id=YOUR_CLIENT_ID` once to reauthorize and save the initial rotating refresh token. After that, the backend reactively refreshes on an authorization failure, validates the new access token, and atomically saves both rotated tokens. Twitch refresh tokens rotate on every use and expire after 30 days; invalid, revoked, expired, or incomplete refresh responses require the owner to run the login command again. PatchParty does not blindly retry an invalid authorization.
+Existing `.env` files created by an earlier PatchParty version have no refresh token. Run `npm.cmd run twitch:login -- --client-id=YOUR_CLIENT_ID` once to reauthorize and save the initial rotating refresh token. After that, the backend renews before the access token expires and also recovers reactively from authorization failures, validates the new access token, and atomically saves both rotated tokens. Twitch refresh tokens rotate on every use and expire after 30 days; invalid, revoked, expired, or incomplete refresh responses require the owner to run the login command again. PatchParty does not blindly retry an invalid authorization.
 
-The owner has confirmed that the local service reached Twitch's connected state. No live chat vote has yet been observed, so end-to-end command delivery remains to be demonstrated with a legitimate viewer. Automated authorization and EventSub lifecycle tests use injected offline mocks. See Twitch's official [Device Code Flow documentation](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow).
+Live chat events have now been observed on PROJECT-V2: two real Twitch messages were accepted as votes. Round 122 applied SHIELD RAIN, and round 137 applied HYPER ENEMIES. Counters: 2 received / 2 valid / 0 rejected. The authenticated sender was the broadcaster account; a separate viewer account and a live OBS broadcast have not been independently verified. See [the live E2E evidence](docs/LIVE-TWITCH-E2E-2026-10-30.md). Automated authorization and EventSub lifecycle tests also use injected offline mocks. See Twitch's official [Device Code Flow documentation](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow).
 
 ## API / controls
 
@@ -74,7 +74,7 @@ The app uses no external scripts, images or copyrighted music.
 
 Empty rounds do not activate a patch. A genuine round winner becomes the server-authoritative active patch for both the game and OBS overlay until another genuine winner replaces it or the rounds are reset. Demo voting uses an HttpOnly browser-session identity, and the built-in sample voters cannot be counted twice in one round.
 
-The Twitch backend validates authorization, verifies the subscription acknowledgement before reporting connected, performs bounded reactive token refresh, resubscribes after recovery, performs EventSub reconnect handover, and detects stale connections. These lifecycle paths are covered with offline mocks only; no live refresh or chat-message integration test has been performed.
+The Twitch backend validates authorization, verifies the subscription acknowledgement before reporting connected, schedules proactive token refresh before the access token expires, resubscribes after recovery, performs EventSub reconnect handover, and detects stale connections. These lifecycle paths are covered with offline mocks; the live chat-message-to-game path has additionally been verified twice. Long-duration proactive renewal is not yet proven in production. 28 automated tests currently pass.
 
 ~~~powershell
 npm run check
